@@ -12,7 +12,7 @@ def test_1d_tma_descriptor_exception(M, BLOCK_M, expect_error):
         pytest.skip("Test requires Hopper or Blackwell target.")
         return
 
-    device="npu"
+    device = "npu"
     x = torch.randn(M, dtype=torch.float32, device=device)
     # globalAddress in the tma descriptor must be aligned to 16 bytes for CU_TENSOR_MAP_INTERLEAVE_NONE.
     # https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__TENSOR__MEMORY.html#group__CUDA__TENSOR__MEMORY
@@ -30,7 +30,7 @@ def test_2d_tma_descriptor_exception(M, N, BLOCK_M, BLOCK_N, expect_error_n, exp
         pytest.skip("Test requires Hopper or Blackwell target.")
         return
 
-    device="npu"
+    device = "npu"
     torch.manual_seed(42)
     A = torch.randn((M, N), dtype=torch.float16, device=device)
     # globalAddress in the tma descriptor must be aligned to 16 bytes for CU_TENSOR_MAP_INTERLEAVE_NONE.

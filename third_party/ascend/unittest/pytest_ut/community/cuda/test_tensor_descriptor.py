@@ -12,7 +12,7 @@ def test_specialization_after_host_tensordesc():
     def kernel(a, b):
         pass
 
-    device="npu"
+    device = "npu"
     A = torch.randn(1024, device=device)
     desc = TensorDescriptor.from_tensor(A, [128])
     h = kernel.warmup(desc, 16, grid=(1, ))

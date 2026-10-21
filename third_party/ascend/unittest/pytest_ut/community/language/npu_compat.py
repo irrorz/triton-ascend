@@ -15,12 +15,7 @@ def is_npu():
 
 
 def _looks_like_cc(cc) -> bool:
-    return (
-        isinstance(cc, tuple)
-        and len(cc) >= 2
-        and isinstance(cc[0], int)
-        and isinstance(cc[1], int)
-    )
+    return (isinstance(cc, tuple) and len(cc) >= 2 and isinstance(cc[0], int) and isinstance(cc[1], int))
 
 
 def _install_cuda_cc_shim():
