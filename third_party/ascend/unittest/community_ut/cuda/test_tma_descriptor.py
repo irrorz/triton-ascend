@@ -5,6 +5,8 @@ import triton
 from triton.tools.ragged_tma import create_ragged_descriptor, atomic_add_ragged, load_ragged, store_ragged
 from triton.tools.tensor_descriptor import TensorDescriptor
 
+pytestmark = pytest.mark.skip(reason="CUDA-only: TMA descriptor")
+
 
 @pytest.mark.parametrize("M, BLOCK_M, expect_error", [(128, 32, False), (127, 32, False), (128, 31, True)])
 def test_1d_tma_descriptor_exception(M, BLOCK_M, expect_error):

@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 import triton
@@ -5,6 +6,7 @@ from triton._internal_testing import requires_tma
 from triton.tools.tensor_descriptor import TensorDescriptor
 
 
+@pytest.mark.skip(reason="CUDA-only: host TMA TensorDescriptor")
 @requires_tma
 def test_specialization_after_host_tensordesc():
 

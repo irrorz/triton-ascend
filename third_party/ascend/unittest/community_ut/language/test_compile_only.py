@@ -1,10 +1,14 @@
+import pytest
 import triton
 import triton.language as tl
 from triton.backends.compiler import GPUTarget
 import re
 from triton.compiler import ASTSource
 
+_CUDA_ONLY = pytest.mark.skip(reason="CUDA-only: sm100 PTX/cubin/ttgir/tcgen05")
 
+
+@_CUDA_ONLY
 def test_compile_only_sm100() -> None:
 
     @triton.jit
@@ -21,6 +25,7 @@ def test_compile_only_sm100() -> None:
     assert k.asm["cubin"] != b""
 
 
+@_CUDA_ONLY
 def test_compile_only_dot() -> None:
 
     @triton.jit
@@ -76,6 +81,7 @@ def test_compile_only_dot() -> None:
     assert k.asm["cubin"] != b""
 
 
+@_CUDA_ONLY
 def test_compile_only_k_loop() -> None:
 
     @triton.jit
@@ -121,6 +127,7 @@ def test_compile_only_k_loop() -> None:
     assert k.asm["cubin"] != b""
 
 
+@_CUDA_ONLY
 def test_compile_only_dot_mxfp() -> None:
 
     @triton.jit

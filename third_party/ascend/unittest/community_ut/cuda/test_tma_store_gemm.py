@@ -53,6 +53,7 @@ def matmul_tma_load_store(  #
     tl.store(c_block_ptr, c)
 
 
+@pytest.mark.skip(reason="CUDA-only: TMA load/store gemm")
 @pytest.mark.parametrize('M,N,K,NUM_CTAS,NUM_WARPS,TRANS_A,TRANS_B,OUTPUT_F16', [
     [64, 64, 16, 1, 4, False, True, False],
     [64, 64, 16, 1, 4, False, True, True],
