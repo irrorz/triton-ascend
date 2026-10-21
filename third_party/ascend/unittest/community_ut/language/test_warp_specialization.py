@@ -258,7 +258,7 @@ def test_warp_specialize_tma_matmul(M, N, K, BLOCK_SIZE_M, BLOCK_SIZE_N, BLOCK_S
 
     GROUP_SIZE_M = 8
 
-    device="npu"
+    device = "npu"
     torch.manual_seed(42)
     A = torch.randn((M, K), dtype=torch.float16, device=device).to(dtype)
     B = torch.randn((N, K), dtype=torch.float16, device=device).to(dtype)
@@ -354,7 +354,7 @@ def test_warp_specialize_tma_matmul_persistent(M, N, K, BLOCK_SIZE_M, BLOCK_SIZE
     GROUP_SIZE_M = 8
     NUM_SMS = torch.npu.get_device_properties("npu").multi_processor_count
 
-    device="npu"
+    device = "npu"
     torch.manual_seed(42)
     A = torch.randn((M, K), dtype=torch.float16, device=device).to(dtype)
     B = torch.randn((N, K), dtype=torch.float16, device=device).to(dtype)

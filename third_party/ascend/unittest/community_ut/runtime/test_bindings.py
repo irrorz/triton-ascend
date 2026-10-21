@@ -34,7 +34,6 @@ def test_module_walk():
     """
     device = "npu"
 
-
     def walk_fn(op):
         name = op.get_name()
         for i in range(op.get_num_results()):

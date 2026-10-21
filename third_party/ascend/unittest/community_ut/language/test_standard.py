@@ -9,9 +9,7 @@ from test_core import _test_binary, int_dtypes, uint_dtypes, float_dtypes, numpy
 # test maximum/minimum ops
 # ---------------
 
-
 # TODO: Tests with unsigned integers failed at compilation stage.
-
 
 # ---------------
 # test sort op

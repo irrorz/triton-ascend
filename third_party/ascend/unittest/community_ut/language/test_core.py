@@ -17,8 +17,10 @@ import triton.language as tl
 
 import sys as _sys
 from pathlib import Path as _Path
+
 _sys.path.insert(0, str(_Path(__file__).resolve().parent))
 from npu_compat import install_pytest_fixtures
+
 install_pytest_fixtures(globals())
 from triton._internal_testing import (
     integral_dtypes,
@@ -471,11 +473,9 @@ def test_shift_op(dtype_x, dtype_y, op, num_ctas):
 # ---------------
 ops = ['==', '!=', '>', '<', '>=', '<=']
 
-
 # ---------------
 # test broadcast
 # ---------------
-
 
 # ----------
 # test slice
@@ -730,7 +730,6 @@ def test_where_broadcast(num_ctas):
 # test unary ops
 # ---------------
 
-
 # ----------------
 # test math ops
 # ----------------
@@ -751,11 +750,9 @@ def test_math_divide_op(expr, num_ctas):
 # test precise math
 # -------------
 
-
 # ----------------
 # test abs
 # ----------------
-
 
 # ----------------
 # test passing shapes as individual params rather than tuples
@@ -796,7 +793,6 @@ def test_shapes_as_params():
 # ----------------
 # test transpose
 # ----------------
-
 
 # ----------------
 # test indexing
@@ -1571,7 +1567,6 @@ keep_dims_3d_configs = [(op, 'float32', (32, 2, 16), axis, True)
                                                   for op in ['min', 'max', 'sum']]
 reduce_bool = [(op, 'bool', shape, axis, False) for op in ['xor_sum'] for shape in reduce2d_shapes for axis in [0, 1]]
 
-
 scan2d_shapes = [(8, 32), (16, 32), (32, 16), (2, 1024), (1024, 2), (32, 32), (1, 1024)]
 
 scan_configs = [(op, type, shape, axis, reverse, num_warps)
@@ -1771,7 +1766,6 @@ def test_generic_reduction():
 # test permute
 # ---------------
 
-
 # ---------------
 # test dot
 # ---------------
@@ -1897,24 +1891,23 @@ def get_test_small_dots_cases():
 
 
 @pytest.mark.interpreter
-@pytest.mark.parametrize(
-    "B, num_warps, M, N, K, BLOCK_M, BLOCK_N, in_dtype_str, out_dtype_str",
-    [(B, num_warps, M, N, K, BLOCK_M, BLOCK_N, in_dtype_str, out_dtype_str)
-     for B in [1, 2, 4, 8]
-     for num_warps in [1, 2, 4, 8, 16]
-     for BLOCK_M, BLOCK_N in [(32, 32)]
-     for M, N, K in [(64, 64, 64), (32, 32, 32)]
-     for in_dtype_str, out_dtype_str in [('int8', 'int8'), ('float16', 'float16'), ('float16', 'float32'),
-                                         ('float32', 'float32')]] +
-    # Large block sizes
-    [(4, 4, 128, 128, 64, 64, 64, 'float16', 'float16')] +
-    # Small block sizes
-    [(B, num_warps, M, N, K, BLOCK_M, BLOCK_N, in_dtype_str, out_dtype_str)
-     for B in [1, 2, 8]
-     for num_warps in [1, 2, 4]
-     for BLOCK_M, BLOCK_N in [(1, 32), (32, 2), (8, 8)]
-     for M, N, K in [(32, 32, 32)]
-     for in_dtype_str, out_dtype_str in [('float16', 'float16'), ('float32', 'float32')]])
+@pytest.mark.parametrize("B, num_warps, M, N, K, BLOCK_M, BLOCK_N, in_dtype_str, out_dtype_str",
+                         [(B, num_warps, M, N, K, BLOCK_M, BLOCK_N, in_dtype_str, out_dtype_str)
+                          for B in [1, 2, 4, 8]
+                          for num_warps in [1, 2, 4, 8, 16]
+                          for BLOCK_M, BLOCK_N in [(32, 32)]
+                          for M, N, K in [(64, 64, 64), (32, 32, 32)]
+                          for in_dtype_str, out_dtype_str in [('int8', 'int8'), ('float16', 'float16'),
+                                                              ('float16', 'float32'), ('float32', 'float32')]] +
+                         # Large block sizes
+                         [(4, 4, 128, 128, 64, 64, 64, 'float16', 'float16')] +
+                         # Small block sizes
+                         [(B, num_warps, M, N, K, BLOCK_M, BLOCK_N, in_dtype_str, out_dtype_str)
+                          for B in [1, 2, 8]
+                          for num_warps in [1, 2, 4]
+                          for BLOCK_M, BLOCK_N in [(1, 32), (32, 2), (8, 8)]
+                          for M, N, K in [(32, 32, 32)]
+                          for in_dtype_str, out_dtype_str in [('float16', 'float16'), ('float32', 'float32')]])
 def test_dot3d(B, num_warps, M, N, K, BLOCK_M, BLOCK_N, in_dtype_str, out_dtype_str):
     device = "npu"
 
@@ -2465,7 +2458,6 @@ def test_default():
 # ---------------
 # test noop
 # ----------------
-
 
 # --------------------
 # value specialization
@@ -3411,7 +3403,6 @@ def test_load_scalar_with_mask():
 # This test is used to test our own PTX codegen for float16 and int16 conversions
 # maybe delete it later after ptxas has been fixed
 
-
 # -----------------------
 # test fp8 -> fp32 dot
 # -----------------------
@@ -3592,7 +3583,6 @@ def test_num_ctas_pre_sm90():
 # -----------------------
 # test propagate_nan
 # -----------------------
-
 
 # -----------------------
 # test clamp
@@ -4140,5 +4130,3 @@ def test_tensor_member():
         tl.device_assert(tl.sum(x) == x.sum())
 
     kernel[(1, )]()
-
-

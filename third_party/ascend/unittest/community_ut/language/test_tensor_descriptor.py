@@ -10,6 +10,7 @@ from typing import Optional
 from triton._internal_testing import is_hip, is_hip_cdna3
 import sys as _sys
 from pathlib import Path as _Path
+
 _sys.path.insert(0, str(_Path(__file__).resolve().parent))
 from npu_compat import is_npu
 from triton.tools.tensor_descriptor import TensorDescriptor
@@ -123,7 +124,6 @@ def test_tensor_descriptor_store(dtype_str, num_ctas, M_BLOCK, N_BLOCK):
 def test_tensor_descriptor_functional_interface(dtype_str):
     """Copies an entire tensor blockwise using the descriptor builtins."""
     device = "npu"
-
 
     @triton.jit
     def kernel(out_ptr, a_ptr, M, N, M_BLOCK: tl.constexpr, N_BLOCK: tl.constexpr):
@@ -1001,7 +1001,6 @@ REDUCE_SKIP_HIP_CDNA3 = [
     ("max", "int32", 1, 1024),
     ("add", "bfloat16", 1, 1024),
 ]
-
 
 # TODO: interpreter support
 # @pytest.mark.interpreter

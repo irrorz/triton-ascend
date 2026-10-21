@@ -8,6 +8,7 @@ import triton.language as tl
 
 _sys.path.insert(0, str(_Path(__file__).resolve().parent))
 from npu_compat import install_pytest_fixtures
+
 install_pytest_fixtures(globals())
 from triton.compiler import ASTSource
 

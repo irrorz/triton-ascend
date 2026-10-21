@@ -11,6 +11,7 @@ from triton.tools.triton_to_gluon_translater.translator_helpers import convert_h
 from triton._internal_testing import is_blackwell, is_hopper_or_newer
 import sys as _sys
 from pathlib import Path as _Path
+
 _sys.path.insert(0, str(_Path(__file__).resolve().parent))
 from npu_compat import is_npu
 
@@ -137,7 +138,7 @@ def matmul_kernel(  #
 @pytest.mark.parametrize("NUM_WARPS", [4])
 @pytest.mark.skipif(not is_blackwell(), reason="Requires Blackwell")
 def test_simple_matmul(dtype_src_str, dtype_dst_str, BLOCK_M, BLOCK_N, BLOCK_K, NUM_STAGES, NUM_WARPS, tmp_path):
-    device="npu"
+    device = "npu"
     M, N, K = 1024, 512, 256
     torch.manual_seed(42)
     dtype_src_str = "float32" if dtype_src_str == "tensorfloat32" else dtype_src_str

@@ -8,6 +8,7 @@ import triton.language as tl
 from triton._internal_testing import is_hopper_or_newer, is_hip_cdna, is_hip_cdna2, is_hip
 import sys as _sys
 from pathlib import Path as _Path
+
 _sys.path.insert(0, str(_Path(__file__).resolve().parent))
 from npu_compat import is_npu
 
@@ -518,5 +519,3 @@ def test_scatter_pipeline():
     torch.testing.assert_close(c, ref)
 
     assert kernel.asm["ttgir"].count("tma_store_wait") == 2, "expected pipelined TMA scatter"
-
-

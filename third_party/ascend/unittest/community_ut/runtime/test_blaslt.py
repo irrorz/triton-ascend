@@ -3,6 +3,7 @@ import torch
 from triton._internal_testing import is_hip, is_hip_cdna3, is_hip_cdna4
 import sys as _sys
 from pathlib import Path as _Path
+
 _sys.path.insert(0, str(_Path(__file__).resolve().parent))
 from npu_compat import is_npu
 

@@ -14,6 +14,7 @@ from triton.backends.nvidia.driver import include_dirs, library_dirs
 from triton._internal_testing import is_hip
 import sys as _sys
 from pathlib import Path as _Path
+
 _sys.path.insert(0, str(_Path(__file__).resolve().parent))
 from npu_compat import is_npu
 

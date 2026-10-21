@@ -8,6 +8,7 @@ import re
 from triton._internal_testing import is_hip, is_hip_cdna3, is_hip_cdna4, is_hip_cdna
 import sys as _sys
 from pathlib import Path as _Path
+
 _sys.path.insert(0, str(_Path(__file__).resolve().parent))
 from npu_compat import is_npu
 
@@ -100,7 +101,7 @@ def get_src_element_ty_size(dtype_str):
 @pytest.mark.parametrize("NUM_WARPS", [4, 8])
 @pytest.mark.parametrize("EPILOGUE_SUBTILE", [True, False])
 @pytest.mark.parametrize("LAYOUT_16x256", [True, False])
-def test_simple_matmul(dtype_src_str, dtype_dst_str, BLOCK_M, BLOCK_N, BLOCK_K, NUM_STAGES, NUM_WARPS, NUM_CTAS, 
+def test_simple_matmul(dtype_src_str, dtype_dst_str, BLOCK_M, BLOCK_N, BLOCK_K, NUM_STAGES, NUM_WARPS, NUM_CTAS,
                        EPILOGUE_SUBTILE, LAYOUT_16x256, monkeypatch):
     device = "npu"
 
@@ -826,5 +827,3 @@ def mxfp8_mxfp4_matmul(  #
     output_ptrs = output_ptr + stride_cm * offs_cm[:, None] + stride_cn * offs_cn[None, :]
     c_mask = (offs_cm[:, None] < M) & (offs_cn[None, :] < N)
     tl.store(output_ptrs, accumulator, mask=c_mask)
-
-
