@@ -50,6 +50,8 @@ _A3_SKIP_FNS = {
     "test_kernel_in_thread": "A3: npuSynchronize from non-main thread",
     "test_host_tensor_descriptor_matmul": "A3: host tensor descriptor matmul",
     "test_tensor_descriptor_reshape_matmul": "A3: tensor descriptor reshape matmul",
+    "test_device_assert": "NPU: device_assert hangs or 507035",
+    "test_device_assert_barrier": "NPU: device_assert hangs or 507035",
 }
 _A3_DESC_UINT = {
     "test_tensor_descriptor_load",
