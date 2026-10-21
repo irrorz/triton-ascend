@@ -9,46 +9,10 @@ if str(_ROOT) not in sys.path:
 
 import npu_compat  # noqa: F401,E402
 
-_ALLOW = None
-
-
-def _load_allowlist():
-    global _ALLOW
-    if _ALLOW is not None:
-        return _ALLOW
-    keys = set()
-    for line in (_ROOT / "ALLOWLIST.txt").read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        fn, fp = line.split()
-        keys.add((fn, fp.replace("\\", "/")))
-        keys.add((fn.split(".")[-1], fp.replace("\\", "/")))
-    _ALLOW = keys
-    return keys
-
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "interpreter: indicate whether interpreter supports the test")
     config.addinivalue_line("markers", "backend(name): select the runtime backend for a test module")
-
-
-def pytest_collection_modifyitems(config, items):
-    allow = _load_allowlist()
-    kept = []
-    for item in items:
-        path = Path(str(getattr(item, "path", item.fspath))).as_posix()
-        marker = "community_ut/"
-        idx = path.find(marker)
-        rel = path[idx + len(marker):] if idx >= 0 else Path(path).name
-        orig = getattr(item, "originalname", None) or item.name.split("[")[0]
-        names = [orig]
-        cls = getattr(item, "cls", None)
-        if cls is not None:
-            names.append(f"{cls.__name__}.{orig}")
-        if any((name, rel) in allow for name in names):
-            kept.append(item)
-    items[:] = kept
 
 
 @pytest.fixture
