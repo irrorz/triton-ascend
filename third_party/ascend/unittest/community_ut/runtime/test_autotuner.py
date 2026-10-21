@@ -6,22 +6,43 @@ import pytest
 
 import pathlib
 import uuid
-import sys as _sys
-from pathlib import Path as _Path
-
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-from npu_compat import is_npu
+from triton._internal_testing import is_cuda
 
 
-def do_bench(kernel_call, quantiles, use_npu_graph=False):
-    if use_npu_graph:
-        return triton.testing.do_bench_npu(kernel_call, quantiles=quantiles)
+def do_bench(kernel_call, quantiles, use_cuda_graph=False):
+    if use_cuda_graph:
+        return triton.testing.do_bench_cudagraph(kernel_call, quantiles=quantiles)
     return triton.testing.do_bench(kernel_call, quantiles=quantiles, warmup=1, rep=1)
 
 
-def test_no_do_bench():
-    device = "npu"
+@pytest.mark.parametrize('use_cuda_graph', [False, True])
+def test_kwargs(use_cuda_graph: bool, device: str):
+    if use_cuda_graph and not torch.cuda.is_available():
+        pytest.xfail("CUDA is not available")
 
+    M, N = 1024, 16
+    src = torch.randn(M * N, device=device)
+    dst = torch.empty(M * N, device=device)
+
+    configs = [triton.Config(kwargs={'BLOCK_SIZE_M': 32}), triton.Config(kwargs={'BLOCK_SIZE_M': 128})]
+
+    @triton.autotune(configs=configs, key=["M"],
+                     do_bench=lambda kernel, quantiles: do_bench(kernel, quantiles, use_cuda_graph))
+    @triton.jit
+    def _kernel(dst, src, stride_m: tl.constexpr, M, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_M: tl.constexpr):
+        offsets_m = tl.program_id(0) * stride_m + tl.arange(0, BLOCK_SIZE_M)
+        offsets_n = tl.arange(0, BLOCK_SIZE_N)
+        x = tl.load(src + offsets_m[:, None] * BLOCK_SIZE_N + offsets_n[None, :])
+        tl.store(dst + offsets_m[:, None] * BLOCK_SIZE_N + offsets_n[None, :], x)
+
+    grid = lambda META: (triton.cdiv(N, META['BLOCK_SIZE_M']), )
+    _kernel[grid](dst, src, N, M, N)
+    # the key word args could be in arbitrary order.
+    _kernel[grid](dst=dst, src=src, M=M // 2, stride_m=N, BLOCK_SIZE_N=N)
+    assert len(_kernel.cache) == 2
+
+
+def test_no_do_bench(device: str):
     M, N = 1024, 16
     src = torch.randn(M * N, device=device)
     dst = torch.empty(M * N, device=device)
@@ -42,9 +63,7 @@ def test_no_do_bench():
 
 
 @pytest.mark.parametrize('pass_kwargs_to_kernel', [False, True])
-def test_restore(pass_kwargs_to_kernel):
-    device = "npu"
-
+def test_restore(pass_kwargs_to_kernel, device):
     N = 1024
     src = torch.zeros(N, device=device)
 
@@ -65,10 +84,8 @@ def test_restore(pass_kwargs_to_kernel):
     triton.testing.assert_close(src, torch.ones_like(src))
 
 
-def test_hooks():
+def test_hooks(device):
     # Autotuner's pre- and post- hooks should be called the same number of times
-    device = "npu"
-
     N = 4096
     src = torch.zeros(N, device=device)
 
@@ -104,16 +121,14 @@ def test_hooks():
     # shared memory bytes = N_STAGES * BLOCK_SIZE * sizeof(float)
     # On AMD GPUs:
     # `num_stages` is a fixed value of 2, so it won't cause out of resources
-    if triton.runtime.driver.active.get_current_target().backend == "npu":
+    if triton.runtime.driver.active.get_current_target().backend == "cuda":
         assert values["has_exception"] is True
     else:
         assert values["has_exception"] is False
 
 
 @pytest.mark.parametrize('with_perf_model', [False, True])
-def test_prune_configs(with_perf_model: bool):
-    device = "npu"
-
+def test_prune_configs(with_perf_model: bool, device: str):
     N = 1024
     src = torch.randn(N, device=device)
     dst = torch.empty(N, device=device)
@@ -158,11 +173,9 @@ def test_prune_configs(with_perf_model: bool):
         assert records['capture_named_args']
 
 
-@pytest.mark.skipif(not is_npu() or torch.npu.get_device_capability()[0] < 9,
+@pytest.mark.skipif(not is_cuda() or torch.cuda.get_device_capability()[0] < 9,
                     reason="Requires compute capability >= 9 for NV")
-def test_override_ttir():
-    device = "npu"
-
+def test_override_ttir(device):
     N = 1024
     src = torch.randn(N, device=device)
     dst = torch.empty(N, device=device)
@@ -209,11 +222,9 @@ module {
     torch.testing.assert_close(src * 10, dst)
 
 
-@pytest.mark.skipif(not is_npu() or torch.npu.get_device_capability()[0] < 9,
+@pytest.mark.skipif(not is_cuda() or torch.cuda.get_device_capability()[0] < 9,
                     reason="Requires compute capability >= 9 for NV")
-def test_override_ttgir():
-    device = "npu"
-
+def test_override_ttgir(device):
     N = 1024
     src = torch.randn(N, device=device)
     dst = torch.empty(N, device=device)
@@ -261,11 +272,9 @@ module attributes {"ttg.num-ctas" = 1 : i32, "ttg.num-warps" = 4 : i32, ttg.targ
     torch.testing.assert_close(src * 10, dst)
 
 
-@pytest.mark.skipif(not is_npu() or torch.npu.get_device_capability()[0] != 9,
+@pytest.mark.skipif(not is_cuda() or torch.cuda.get_device_capability()[0] != 9,
                     reason="PTX file in this unit test is only for SM90")
-def test_override_ptx():
-    device = "npu"
-
+def test_override_ptx(device):
     N = 1024
     src = torch.randn(N, device=device)
     dst = torch.empty(N, device=device)
@@ -361,10 +370,8 @@ $L__func_end0:
     torch.testing.assert_close(src * 10, dst)
 
 
-def test_exceed_tmem():
-    device = "npu"
-
-    if not torch.npu.is_available() or not torch.npu.get_device_capability()[0] == 10:
+def test_exceed_tmem(device):
+    if not torch.cuda.is_available() or not torch.cuda.get_device_capability()[0] == 10:
         pytest.skip("Test requires tensor memory.")
     N = 512
     dst = torch.empty((N, ), device=device, dtype=torch.float32)
@@ -402,11 +409,9 @@ def test_exceed_tmem():
     ) == "out of resource: tensor memory, Required: 640, Hardware limit: 512. Reducing block sizes or `num_stages` may help."
 
 
-def test_exceed_threads():
-    device = "npu"
-
-    if not torch.npu.is_available():
-        pytest.skip("NPU is not available")
+def test_exceed_threads(device):
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is not available")
     x = torch.empty(1024, device=device, dtype=torch.float32)
     y = torch.empty_like(x)
     output = torch.empty_like(x)
@@ -445,9 +450,7 @@ def test_exceed_threads():
         exception_out_of_resource)
 
 
-def test_prune_all_configs():
-    device = "npu"
-
+def test_prune_all_configs(device):
     N = 1024
     src = torch.randn(N, device=device)
     dst = torch.empty(N, device=device)

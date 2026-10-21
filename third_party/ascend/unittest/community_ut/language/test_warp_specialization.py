@@ -7,7 +7,7 @@ import triton.language as tl
 from triton._internal_testing import is_hip, is_hopper, is_blackwell
 from triton.tools.tensor_descriptor import TensorDescriptor
 
-if not is_hip() and torch.npu.is_available() and torch.npu.get_device_capability()[0] in [9, 10]:
+if not is_hip() and torch.cuda.is_available() and torch.cuda.get_device_capability()[0] in [9, 10]:
     from triton._C.libtriton import nvidia
     cublas_workspace = torch.empty(32 * 1024 * 1024, device="npu", dtype=torch.uint8)
     cublas = nvidia.cublas.CublasLt(cublas_workspace)
@@ -352,7 +352,7 @@ def test_warp_specialize_tma_matmul_persistent(M, N, K, BLOCK_SIZE_M, BLOCK_SIZE
     dtype = torch.float8_e4m3fn if use_fp8 else torch.float16
 
     GROUP_SIZE_M = 8
-    NUM_SMS = torch.npu.get_device_properties("npu").multi_processor_count
+    NUM_SMS = torch.cuda.get_device_properties("cuda").multi_processor_count
 
     device = "npu"
     torch.manual_seed(42)

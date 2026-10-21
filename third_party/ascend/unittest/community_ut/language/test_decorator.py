@@ -5,9 +5,7 @@ import triton.language as tl
 import pytest
 
 
-def test_decorator_with_def():
-
-    device = "npu"
+def test_decorator_with_def(device):
 
     def triton_heuristics_pointwise(**kwargs):
 
@@ -30,9 +28,7 @@ def test_decorator_with_def():
         pytest.fail(f"triton compile failed with error: {e}")
 
 
-def test_triton_heuristic():
-    device = "npu"
-
+def test_triton_heuristic(device):
     N = 1023
     src = torch.empty(N, device=device)
     dst = torch.zeros(N, device=device)

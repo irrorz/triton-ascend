@@ -11,12 +11,7 @@ import numpy as np
 import triton
 from triton.backends.compiler import GPUTarget
 from triton.backends.nvidia.driver import include_dirs, library_dirs
-from triton._internal_testing import is_hip
-import sys as _sys
-from pathlib import Path as _Path
-
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-from npu_compat import is_npu
+from triton._internal_testing import is_cuda, is_hip
 
 kernel_utils_src = """
 import triton
@@ -145,7 +140,7 @@ def gen_test_bin(dir, M, N, K, exe="test", algo_id=0):
 int main(int argc, char **argv) {{
   int M = {M}, N = {N}, K = {K};
 
-  // initialize NPU handles
+  // initialize CUDA handles
   CUdevice dev;
   CUcontext ctx;
   CUstream stream;
@@ -187,7 +182,7 @@ int main(int argc, char **argv) {{
   cuMemcpyDtoH(hC, C, M*N*4);
   write_buffer_to_csv(argv[3], hC, M*N);
 
-  // free npu handles
+  // free cuda handles
   unload_matmul_fp16();
   cuMemFree(A);
   cuMemFree(B);
@@ -204,7 +199,7 @@ int main(int argc, char **argv) {{
         command.extend(["-I", inc_dir])
     for lib_dir in library_dirs():
         command.extend(["-L", lib_dir])
-    command.extend(["-l", "npu", "-L", dir, "-l", "kernel", "-o", exe])
+    command.extend(["-l", "cuda", "-L", dir, "-l", "kernel", "-o", exe])
     subprocess.run(command, check=True, cwd=dir)
 
 
@@ -316,9 +311,115 @@ def check_hasco_binary_str(tmp_dir: str, dtype: str):
 
 
 # Test edge case where the provided kernel signature has no specializations
+def test_compile_link_matmul_no_specialization():
+    np.random.seed(3)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        dtype = "fp16"
+        BM, BN, BK = 16, 16, 16
+
+        kernel_path = write_triton_kernels(tmp_dir, kernel_src, kernel_utils_src)
+        compile_aot_kernel_no_specialization(tmp_dir, kernel_path, dtype, BM, BN, BK)
+        if is_hip():
+            check_hasco_binary_str(tmp_dir, dtype)
+            return
+
+        link_aot_kernels(tmp_dir)
+
+        # compile test case
+        M, N, K = 16, 16, 16
+        gen_kernel_library(tmp_dir, "libkernel.so")
+        gen_test_bin(tmp_dir, M, N, K)
+
+        # initialize test data
+        a, b, a_path, b_path, c_path = generate_matmul_test_data(tmp_dir, M, N, K)
+
+        # run test case
+        env = os.environ.copy()
+        env["LD_LIBRARY_PATH"] = tmp_dir
+        subprocess.run(["./test", a_path, b_path, c_path], env=env, check=True, cwd=tmp_dir)
+
+        # read data and compare against reference
+        c = np.genfromtxt(c_path, delimiter=",", dtype=np.int32)
+        c_tri = c.reshape((M, N)).view(np.float32)
+        c_ref = np.matmul(a.astype(np.float32), b.astype(np.float32))
+        np.testing.assert_allclose(c_tri, c_ref * c_ref, atol=1e-4, rtol=0.0)
 
 
-@pytest.mark.skipif(not is_npu(), reason="Requires NPU")
+def test_compile_link_matmul():
+    np.random.seed(3)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        dtype = "fp16"
+        BM, BN, BK = 16, 16, 16
+
+        kernel_path = write_triton_kernels(tmp_dir, kernel_src, kernel_utils_src)
+        compile_aot_kernels(tmp_dir, kernel_path, dtype, BM, BN, BK, ha_hb_hints=[(":16", ":16")])
+        if is_hip():
+            check_hasco_binary_str(tmp_dir, dtype)
+            return
+        link_aot_kernels(tmp_dir)
+
+        # compile test case
+        M, N, K = 16, 16, 16
+        gen_kernel_library(tmp_dir, "libkernel.so")
+        gen_test_bin(tmp_dir, M, N, K)
+
+        # initialize test data
+        a, b, a_path, b_path, c_path = generate_matmul_test_data(tmp_dir, M, N, K)
+
+        # run test case
+        env = os.environ.copy()
+        env["LD_LIBRARY_PATH"] = tmp_dir
+        subprocess.run(["./test", a_path, b_path, c_path], env=env, check=True, cwd=tmp_dir)
+
+        # read data and compare against reference
+        c = np.genfromtxt(c_path, delimiter=",", dtype=np.int32)
+        c_tri = c.reshape((M, N)).view(np.float32)
+        c_ref = np.matmul(a.astype(np.float32), b.astype(np.float32))
+        np.testing.assert_allclose(c_tri, c_ref * c_ref, atol=1e-4, rtol=0.0)
+
+
+def test_launcher_has_no_available_kernel():
+    np.random.seed(3)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        dtype = "fp16"
+        BM, BN, BK = 16, 16, 16
+
+        kernel_path = write_triton_kernels(tmp_dir, kernel_src, kernel_utils_src)
+        compile_aot_kernels(tmp_dir, kernel_path, dtype, BM, BN, BK, ha_hb_hints=[(":1", ":1")])
+        if is_hip():
+            check_hasco_binary_str(tmp_dir, dtype)
+            return
+
+        link_aot_kernels(tmp_dir)
+
+        # compile test case
+        M, N, K = 16, 16, 16
+        gen_kernel_library(tmp_dir, "libkernel.so")
+        gen_test_bin(tmp_dir, M, N, K)
+
+        # initialize test data
+        a, b, a_path, b_path, c_path = generate_matmul_test_data(tmp_dir, M, N, K)
+
+        # run test case
+        env = os.environ.copy()
+        env["LD_LIBRARY_PATH"] = tmp_dir
+        result = subprocess.run(
+            ["./test", a_path, b_path, c_path],
+            env=env,
+            cwd=tmp_dir,
+            capture_output=True,
+            text=True,
+        )
+
+        # It should fail since the launcher requires all the strides be 1 while they are not.
+        assert result.returncode == -6
+        assert "kernel launch failed" in result.stderr
+
+
+@pytest.mark.skipif(not is_cuda(), reason="Requires CUDA")
 def test_compile_link_autotune_matmul():
     np.random.seed(3)
 
@@ -381,7 +482,7 @@ module attributes {{"ttg.num-warps" = 4 : i32, "ttg.threads-per-warp" = {warp_si
         with open(kernel_path, "w") as fp:
             fp.write(src.format(warp_size=target.warp_size))
         k = triton.compile(kernel_path, target=target)
-        if is_npu():
+        if is_cuda():
             ptx = k.asm["ptx"]
             assert ".target sm_80" in ptx
             assert ".address_size 64" in ptx

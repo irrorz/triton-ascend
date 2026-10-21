@@ -1,16 +1,9 @@
 import os
 from contextlib import contextmanager
-import sys as _sys
-from pathlib import Path as _Path
 
 import torch
 import triton
 import triton.language as tl
-
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-from npu_compat import install_pytest_fixtures
-
-install_pytest_fixtures(globals())
 
 
 @contextmanager
@@ -22,9 +15,7 @@ def enable_dump_context(pass_name="1"):
         os.environ["MLIR_ENABLE_DUMP"] = "0"
 
 
-def test_fn_dump(capfd, fresh_triton_cache):
-    device = "npu"
-
+def test_fn_dump(capfd, device, fresh_triton_cache):
     N = 1024
     src = torch.zeros(N, device=device)
 

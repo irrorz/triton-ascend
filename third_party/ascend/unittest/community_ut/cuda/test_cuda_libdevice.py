@@ -37,11 +37,11 @@ def tanh_kernel(
 
 
 @pytest.mark.parametrize("direct_import", [False, True])
-@pytest.mark.parametrize("dtype_str", ['float32'])
+@pytest.mark.parametrize("dtype_str", ['float32', 'float64'])
 def test_math_extern(dtype_str, direct_import):
 
-    if not torch.npu.is_available():
-        pytest.skip("Test requires NPU target.")
+    if not torch.cuda.is_available():
+        pytest.skip("Test requires CUDA target.")
         return
 
     torch.manual_seed(42)

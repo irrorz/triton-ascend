@@ -5,12 +5,10 @@ import triton
 from triton.tools.ragged_tma import create_ragged_descriptor, atomic_add_ragged, load_ragged, store_ragged
 from triton.tools.tensor_descriptor import TensorDescriptor
 
-pytestmark = pytest.mark.skip(reason="CUDA-only: TMA descriptor")
-
 
 @pytest.mark.parametrize("M, BLOCK_M, expect_error", [(128, 32, False), (127, 32, False), (128, 31, True)])
 def test_1d_tma_descriptor_exception(M, BLOCK_M, expect_error):
-    if not torch.npu.is_available() or not torch.npu.get_device_capability()[0] >= 9:
+    if not torch.cuda.is_available() or not torch.cuda.get_device_capability()[0] >= 9:
         pytest.skip("Test requires Hopper or Blackwell target.")
         return
 
@@ -28,7 +26,7 @@ def test_1d_tma_descriptor_exception(M, BLOCK_M, expect_error):
 @pytest.mark.parametrize("M, BLOCK_M, expect_error_m", [(128, 32, False), (125, 33, True), (0, 32, False)])
 @pytest.mark.parametrize("N, BLOCK_N, expect_error_n", [(128, 32, False), (128, 30, True), (127, 32, False)])
 def test_2d_tma_descriptor_exception(M, N, BLOCK_M, BLOCK_N, expect_error_n, expect_error_m):
-    if not torch.npu.is_available() or not torch.npu.get_device_capability()[0] >= 9:
+    if not torch.cuda.is_available() or not torch.cuda.get_device_capability()[0] >= 9:
         pytest.skip("Test requires Hopper or Blackwell target.")
         return
 
@@ -75,7 +73,7 @@ def example_load_atomic_add_kernel(X, Y, x_off, y_off, x_size, y_size):
 ])
 def test_ragged_tma(dtype):
 
-    if not torch.npu.is_available() or not torch.npu.get_device_capability()[0] >= 9:
+    if not torch.cuda.is_available() or not torch.cuda.get_device_capability()[0] >= 9:
         pytest.skip("Test requires Hopper or Blackwell target.")
         return
 

@@ -38,10 +38,10 @@ def func(x: torch.Tensor, y: torch.Tensor):
     kernel3[grid](BLOCK_SIZE=1024)
 
 
-def test_op(capfd):
+def test_op(capfd, device: str):
     size = 98432
-    x = torch.rand(size, device="npu")
-    y = torch.rand(size, device="npu")
+    x = torch.rand(size, device=device)
+    y = torch.rand(size, device=device)
     func(x, y)
     stdout, stderr = capfd.readouterr()
     if 'LLVM_PASS_PLUGIN_PATH' in os.environ:

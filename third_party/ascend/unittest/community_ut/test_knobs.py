@@ -5,12 +5,6 @@ import triton
 from triton._internal_testing import is_hip
 
 from pathlib import Path
-import sys as _sys
-
-_sys.path.insert(0, str(Path(__file__).resolve().parent))
-from npu_compat import install_pytest_fixtures
-
-install_pytest_fixtures(globals())
 
 
 def test_knobs_utils(fresh_knobs) -> None:

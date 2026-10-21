@@ -5,19 +5,14 @@ import torch
 import triton
 import triton.language as tl
 
-from triton._internal_testing import is_hopper_or_newer, is_hip_cdna, is_hip_cdna2, is_hip
-import sys as _sys
-from pathlib import Path as _Path
-
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-from npu_compat import is_npu
+from triton._internal_testing import is_cuda, is_hopper_or_newer, is_hip_cdna, is_hip_cdna2, is_hip
 
 
 def check_capabilities():
-    if is_npu():
-        cc = torch.npu.get_device_capability()
+    if is_cuda():
+        cc = torch.cuda.get_device_capability()
         if cc[0] < 8:
-            pytest.skip("NPU required")
+            pytest.skip("CUDA 8.0+ required")
 
 
 @triton.jit
@@ -217,15 +212,13 @@ def dot_scale_ref(x, scale, y, type_x, type_y):
 
 
 @pytest.mark.parametrize("scale", [True, False])
-def test_pipeline_matmul(scale):
-    device = "npu"
-
+def test_pipeline_matmul(scale, device):
     check_capabilities()
-    if scale and not (is_npu() or is_hip_cdna()):
-        pytest.skip("NYI: scale_dot just implemented in NPU/HIP")
+    if scale and not (is_cuda() or is_hip_cdna()):
+        pytest.skip("NYI: scale_dot just implemented in CUDA/HIP")
     M, N, K = 512, 512, 128
     BLOCK_M, BLOCK_N, BLOCK_K = 64, 64, 32
-    NUM_STAGES = 4 if is_npu() else 2
+    NUM_STAGES = 4 if is_cuda() else 2
 
     if scale:
         # Large enough tile to let our heuristics to pipeline small tensor kick in
@@ -284,7 +277,7 @@ def test_pipeline_matmul(scale):
     atol = 1e-2 if is_hip_cdna2() or scale else None
     rtol = 1e-2 if is_hip_cdna2() or scale else None
     torch.testing.assert_close(ref_out, output, atol=atol, rtol=rtol, equal_nan=scale)
-    if is_npu():
+    if is_cuda():
         ttgir = handler.asm["ttgir"]
         if use_tma:
             assert ttgir.count("ttng.async_tma_copy_global_to_local") != 0, "async tma copy not found"
@@ -292,11 +285,11 @@ def test_pipeline_matmul(scale):
             assert ttgir.count("ttng.barrier_expect") != 0, "barrier_expect not found"
             assert ttgir.count("ttng.wait_barrier") != 0, "wait_barrier not found"
 
-            if torch.npu.get_device_capability()[0] == 9:
+            if torch.cuda.get_device_capability()[0] == 9:
                 # a_tma, b_tma, output_tma, barriar_tma
                 assert ttgir.count("ttg.local_alloc") == 4, "alloc number not match"
                 assert ttgir.count("ttng.warp_group_dot") != 0, "warp_group_dot not found"
-            elif torch.npu.get_device_capability()[0] == 10:
+            elif torch.cuda.get_device_capability()[0] == 10:
                 # a_tma, b_tma, output_tma, barriar_tma, barriar_mma
                 assert ttgir.count("ttg.local_alloc") == 5, "alloc number not match"
                 assert ttgir.count("ttng.tc_gen5_mma") != 0, "warp_group_dot not found"
@@ -306,7 +299,7 @@ def test_pipeline_matmul(scale):
             # 2. check sync point
             assert ttgir.count("num = 0 : i32") == 1, "only one sync point for the loads after the loop"
             # 3. check alloc
-            if torch.npu.get_device_capability()[0] == 10:
+            if torch.cuda.get_device_capability()[0] == 10:
                 if scale:
                     # A, B, scale, decomposed A shmem
                     count = 4
@@ -318,16 +311,14 @@ def test_pipeline_matmul(scale):
                 assert ttgir.count("ttg.local_alloc") == (3 if scale else 2), "alloc number not match"
 
             # 4. check dot
-            cc = torch.npu.get_device_capability()
+            cc = torch.cuda.get_device_capability()
             if cc[0] == 9:
                 assert ttgir.count("ttng.warp_group_dot") != 0, "warp_group_dot not found"
             elif cc[0] < 9:
                 assert ttgir.count("ttg.dot") != 0, "dot not found"
 
 
-def test_pipeline_vecadd():
-    device = "npu"
-
+def test_pipeline_vecadd(device):
     check_capabilities()
     SIZE = 4096
     NUM_BLOCKS = 4
@@ -340,7 +331,7 @@ def test_pipeline_vecadd():
     handler = vecadd_kernel[grid](a, b, output, SIZE, NUM_BLOCKS, BLOCK_SIZE, NUM_STAGES)
     ref_out = a + b
     torch.testing.assert_close(ref_out, output)
-    if is_npu():
+    if is_cuda():
         ttgir = handler.asm["ttgir"]
         # 1. check number of stages
         assert ttgir.count("ttg.async_copy_global_to_local") / 2 == NUM_STAGES, "num_stages not match"
@@ -350,9 +341,7 @@ def test_pipeline_vecadd():
 
 @pytest.mark.parametrize("ROW_COUNT", [0, 1, 2, 3])
 @pytest.mark.parametrize("NUM_STAGES", [1, 2, 3, 4, 5])
-def test_pipeline_epilogue(ROW_COUNT, NUM_STAGES):
-
-    device = "npu"
+def test_pipeline_epilogue(ROW_COUNT, NUM_STAGES, device):
 
     @triton.jit
     def kernel_up(output_ptr, input_ptr, input_row_stride, output_row_stride, n_rows, n_cols, BLOCK_SIZE: tl.constexpr,
@@ -432,6 +421,42 @@ def indirect_matmul_kernel(
     tl.store(Out_ptrs, acc)
 
 
+@pytest.mark.parametrize("BLOCK_M, BLOCK_N, BLOCK_K", [(128, 128, 128), (128, 128, 64), (128, 64, 128)])
+@pytest.mark.parametrize("num_stages", [1, 3, 5])
+def test_indirect_matmul(BLOCK_M, BLOCK_N, BLOCK_K, num_stages, device):
+    if (num_stages > 3 or (num_stages >= 3 and (BLOCK_M, BLOCK_N, BLOCK_K) == (128, 128, 128))) and is_hip():
+        pytest.skip("Not enough shared memory on HIP.")
+    M = BLOCK_M
+    N = BLOCK_N
+
+    K = BLOCK_K * 2
+    A = random_bfloat16((K, N), device=device)
+    B = random_bfloat16((K, M), device=device)
+
+    # Use arange for indices so it's numerically just a matmul
+    Indices = torch.arange(K, device=device)
+    Out = torch.empty((N, M), device=device, dtype=torch.float32)
+
+    expect = torch.matmul(A.mT.to(torch.float32), B.to(torch.float32))
+
+    indirect_matmul_kernel[(1, )](
+        Out,
+        Out.stride(0),
+        A,
+        A.stride(0),
+        B,
+        B.stride(0),
+        Indices,
+        K,
+        BLOCK_M,
+        BLOCK_K,
+        BLOCK_N,
+        num_warps=4,
+        num_stages=num_stages,
+    )
+    torch.testing.assert_close(expect, Out)
+
+
 @triton.jit
 def matmul_kernel_persistent_scatter(a_ptr, b_ptr, c_ptr,  #
                                      M, N, K,  #
@@ -490,11 +515,9 @@ def matmul_kernel_persistent_scatter(a_ptr, b_ptr, c_ptr,  #
         c_desc.scatter(c, offs_am + tl.arange(0, BLOCK_SIZE_M), offs_bn)
 
 
-@pytest.mark.skipif(torch.npu.get_device_capability()[0] != 10,
+@pytest.mark.skipif(not is_cuda() or torch.cuda.get_device_capability()[0] != 10,
                     reason="TMA Scatter only works on cloud Blackwell Chips")
-def test_scatter_pipeline():
-
-    device = "npu"
+def test_scatter_pipeline(device):
 
     def alloc_fn(size, alignment, stream):
         return torch.empty(size, device="npu", dtype=torch.int8)
@@ -505,7 +528,7 @@ def test_scatter_pipeline():
     BLOCK_M, BLOCK_N, BLOCK_K = 64, 64, 32
     GROUP_SIZE_M = 4
 
-    NUM_SMS = torch.npu.get_device_properties("npu").multi_processor_count
+    NUM_SMS = torch.cuda.get_device_properties("cuda").multi_processor_count
     grid_x = min(NUM_SMS, triton.cdiv(M, BLOCK_M) * triton.cdiv(N, BLOCK_N))
 
     a = torch.randn(M, K, device=device, dtype=torch.float16)
@@ -519,3 +542,36 @@ def test_scatter_pipeline():
     torch.testing.assert_close(c, ref)
 
     assert kernel.asm["ttgir"].count("tma_store_wait") == 2, "expected pipelined TMA scatter"
+
+
+@pytest.mark.parametrize("num_stages", [1, 2, 3])
+def test_conditional_store_pipeline(num_stages, device):
+    """
+    Test for the conditional store pipelining bugfix.
+    This reproduces the race condition where conditional code gets moved to epilogue cluster,
+    causing users of loads to be scheduled in later clusters than the loads themselves.
+    """
+    check_capabilities()
+
+    @triton.jit
+    def conditional_store_kernel(
+        arange_ptr,
+        output_ptr,
+        loop_stages: tl.constexpr,
+        N: tl.constexpr,
+        always_true_but_not_constexpr,
+    ):
+        for i in tl.range(0, N, num_stages=loop_stages):
+            out_idx = tl.load(arange_ptr + i + tl.arange(0, 1))
+            if always_true_but_not_constexpr:
+                tl.store(output_ptr + out_idx, i + 1)
+
+    N = 17
+    arange = torch.arange(N, dtype=torch.int32, device=device)
+    output = torch.zeros((N, ), dtype=torch.int32, device=device)
+
+    conditional_store_kernel[(1, )](arange, output, num_stages, N, True)
+
+    # Expected output: [1, 2, 3, 4, ..., N]
+    expected = torch.arange(1, N + 1, dtype=torch.int32, device=device)
+    assert torch.equal(output, expected)

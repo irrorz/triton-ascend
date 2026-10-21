@@ -1,7 +1,26 @@
 import numpy as np
 import pytest
-import scipy.stats
 import torch
+
+# numpy 2.x dropped aliases that older scipy.sparse still imports (np.long etc).
+for _name, _alias in (
+    ("bool", bool),
+    ("float", float),
+    ("int", int),
+    ("object", object),
+    ("str", str),
+    ("complex", complex),
+    ("unicode", str),
+    ("long", int),
+    ("ulong", getattr(np, "uintc", int)),
+    ("longlong", getattr(np, "longlong", int)),
+    ("ulonglong", getattr(np, "ulonglong", int)),
+):
+    try:
+        getattr(np, _name)
+    except AttributeError:
+        setattr(np, _name, _alias)
+import scipy.stats
 
 import triton
 import triton.language as tl
@@ -121,9 +140,7 @@ BLOCK = tl.constexpr(1024)
                                                            for seed in [0, 42, 124, 54, 0xffffffff, 0x0000000fcafeb0ba]
                                                            for dtype in ['int32', 'int64']
                                                            for const_seed in [True, False]])
-def test_randint(size, seed, dtype, const_seed):
-    device = "npu"
-
+def test_randint(size, seed, device, dtype, const_seed):
     size = list(map(int, size.split(',')))
     torch_dtype = getattr(torch, dtype)
     numpy_dtype = getattr(np, f"u{dtype}")
@@ -167,9 +184,7 @@ def test_randint(size, seed, dtype, const_seed):
                                                            for seed in [0, 42, 124, 54]
                                                            for dtype in ['int32', 'int64']
                                                            for const_seed in [True, False]])
-def test_rand(size, seed, dtype, const_seed):
-
-    device = "npu"
+def test_rand(size, seed, dtype, device, const_seed):
 
     @triton.jit
     def kernel(X, N, seed, dtype: tl.constexpr):
@@ -197,9 +212,7 @@ def test_rand(size, seed, dtype, const_seed):
     assert scipy.stats.kstest(x.tolist(), 'uniform', args=(0, 1)).statistic < 0.01
 
 
-def test_seed_is_int():
-
-    device = "npu"
+def test_seed_is_int(device):
 
     @triton.jit
     def kernel(X, seed):
@@ -225,9 +238,7 @@ def test_seed_is_int():
                                                            for seed in [0, 42, 124, 54]
                                                            for dtype in ['int32', 'int64']
                                                            for const_seed in [True, False]])
-def test_randn(size, seed, dtype, const_seed):
-
-    device = "npu"
+def test_randn(size, seed, dtype, device, const_seed):
 
     @triton.jit
     def kernel(X, N, seed, dtype: tl.constexpr):
@@ -260,9 +271,7 @@ def test_randn(size, seed, dtype, const_seed):
 
 @pytest.mark.interpreter
 @pytest.mark.parametrize('dtype', ['int32', 'int64'])
-def test_rand_limits(dtype):
-
-    device = "npu"
+def test_rand_limits(dtype, device):
 
     @triton.jit
     def kernel(input, output, n: tl.constexpr):

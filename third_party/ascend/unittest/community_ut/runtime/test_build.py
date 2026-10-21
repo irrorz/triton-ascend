@@ -2,16 +2,10 @@ from __future__ import annotations
 
 import pytest
 import tempfile
-import sys as _sys
 
 from pathlib import Path
 
 import triton
-
-_sys.path.insert(0, str(Path(__file__).resolve().parent))
-from npu_compat import install_pytest_fixtures
-
-install_pytest_fixtures(globals())
 
 from triton.runtime.build import compile_module_from_src
 

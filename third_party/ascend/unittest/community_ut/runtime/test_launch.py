@@ -7,12 +7,7 @@ import os
 import torch
 import triton
 import triton.language as tl
-from triton._internal_testing import is_hip
-import sys as _sys
-from pathlib import Path as _Path
-
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-from npu_compat import is_npu
+from triton._internal_testing import is_cuda, is_hip
 
 
 def test_metadata() -> None:
@@ -43,9 +38,7 @@ def test_metadata() -> None:
     assert used_hook
 
 
-def test_memory_leak() -> None:
-
-    device = "npu"
+def test_memory_leak(device) -> None:
 
     @triton.jit
     def kernel(in_ptr0, out_ptr0, xnumel, XBLOCK: tl.constexpr):
@@ -153,10 +146,68 @@ def test_multiple_hooks() -> None:
     triton.knobs.runtime.kernel_load_end_hook.remove(hook_end1)
 
 
-@pytest.mark.interpreter
-def test_pre_run_hooks():
+@pytest.mark.parametrize("options", [
+    {"num_warps": 1},
+    {"enable_fp_fusion": False},
+    {"extern_libs": {}},
+])
+def test_launch_with_options(options) -> None:
+    if "extern_libs" in options:
+        # copied from tutorials/07-extern-functions.py
+        current_dir = pathlib.Path(os.path.dirname(os.path.abspath(__file__)))
+        if is_cuda():
+            libdir = current_dir.parent.parent.parent.parent / 'third_party/nvidia/backend/lib'
+            options["extern_libs"] = {"libdevice": str(libdir / 'libdevice.10.bc')}
+        elif is_hip():
+            libdir = current_dir.parent.parent.parent.parent / 'third_party/amd/backend/lib'
+            options["extern_libs"] = {"ocml": str(libdir / 'ocml.bc'), "ockl": str(libdir / 'ockl.bc')}
 
-    device = "npu"
+    compile_info = {}
+    counter = 0
+
+    def compile_info_hook(key, repr, fn, compile, is_manual_warmup, already_compiled):
+        nonlocal compile_info
+        compile_info = compile
+
+    def cache_hook(*args, **kwargs):
+        nonlocal counter
+        counter += 1
+
+    @triton.jit
+    def kernel(x):
+        pass
+
+    triton.knobs.runtime.jit_post_compile_hook = compile_info_hook
+    triton.knobs.runtime.jit_cache_hook = cache_hook
+
+    # run first without options
+    kernel[(1, 1, 1)](6)
+    assert counter == 1
+
+    # run with options, should lead to new compilation
+    kernel[(1, 1, 1)](6, **options)
+    assert counter == 2
+
+    # run a second time for testing kernel-cache look-up
+    kernel[(1, 1, 1)](6, **options)
+    assert counter == 2
+
+    # check the options are passed on to compile_info correctly
+    option_key, option_val = next(iter(options.items()))
+    if option_key == "extern_libs":
+        # HIPOptions overwrite the extern_libs option, so we skip the test
+        # passing and specializing options still is tested
+        if not is_hip():
+            assert compile_info[option_key] == tuple(option_val.items())
+    else:
+        assert compile_info[option_key] == option_val
+
+    triton.knobs.runtime.jit_post_compile_hook = None
+    triton.knobs.runtime.jit_cache_hook = None
+
+
+@pytest.mark.interpreter
+def test_pre_run_hooks(device):
 
     @triton.jit
     def add_kernel(a_ptr, n_elements: tl.constexpr):

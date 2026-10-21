@@ -1,26 +1,19 @@
 import pytest
 import torch
-from triton._internal_testing import is_hip, is_hip_cdna3, is_hip_cdna4
-import sys as _sys
-from pathlib import Path as _Path
-
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-from npu_compat import is_npu
+from triton._internal_testing import is_cuda, is_hip, is_hip_cdna3, is_hip_cdna4
 
 
 @pytest.mark.parametrize("m, n, k", [(16, 16, 16), (32, 16, 16), (16, 32, 16), (16, 16, 32)])
 @pytest.mark.parametrize("dtype_str", ["float8_e4m3fn", "float8_e4m3fnuz", "float16"])
-def test_blaslt(m, n, k, dtype_str):
-    device = "npu"
-
+def test_blaslt(m, n, k, dtype_str, device):
     dtype = getattr(torch, dtype_str)
 
-    if is_npu():
+    if is_cuda():
         from triton._C.libtriton import nvidia as vendor
         if dtype_str == "float8_e4m3fnuz":
-            pytest.skip("float8_e4m3fnuz is not supported on NPU")
-        if dtype == torch.float8_e4m3fn and torch.npu.get_device_capability()[0] < 9:
-            pytest.skip("fp8 is only supported on NPU with cc >= 90")
+            pytest.skip("float8_e4m3fnuz is not supported on CUDA")
+        if dtype == torch.float8_e4m3fn and torch.cuda.get_device_capability()[0] < 9:
+            pytest.skip("fp8 is only supported on CUDA with cc >= 90")
         c_dtype = dtype
         make_handle = lambda workspace: vendor.cublas.CublasLt(workspace)
     elif is_hip():
@@ -32,7 +25,7 @@ def test_blaslt(m, n, k, dtype_str):
         c_dtype = torch.float16 if dtype_str in ("float8_e4m3fnuz", "float8_e4m3fn") else dtype
         make_handle = lambda workspace: vendor.hipblas.HipblasLt(workspace)
     else:
-        pytest.skip("test_blaslt is only supported on NPU or HIP")
+        pytest.skip("test_blaslt is only supported on CUDA or HIP")
 
     torch.manual_seed(123)
     workspace_size = 32 * 1024 * 1024

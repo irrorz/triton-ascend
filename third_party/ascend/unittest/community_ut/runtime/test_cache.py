@@ -1,4 +1,3 @@
-import expecttest
 import importlib.util
 import itertools
 import os
@@ -12,13 +11,6 @@ import torch
 import triton
 import triton.language as tl
 from triton._internal_testing import is_hip
-import sys as _sys
-from pathlib import Path as _Path
-
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-from npu_compat import install_pytest_fixtures
-
-install_pytest_fixtures(globals())
 
 
 @triton.jit
@@ -163,7 +155,7 @@ def test_constexpr_fn_change():
 
 @triton.constexpr_function
 def invalid_constexpr_fn():
-    return torch.npu.get_device_capability()
+    return torch.cuda.get_device_capability()
 
 
 def test_invalid_constexpr_fn():
@@ -197,9 +189,7 @@ def test_changed_line_numbers_invalidate_cache(tmp_path: pathlib.Path):
     assert orig_cache_key != updated_cache_key
 
 
-def test_reuse(fresh_triton_cache):
-    device = "npu"
-
+def test_reuse(device, fresh_triton_cache):
     counter = 0
 
     def inc_counter(*args, **kwargs):
@@ -213,12 +203,43 @@ def test_reuse(fresh_triton_cache):
     assert counter == 1
 
 
+@pytest.mark.parametrize('mode', ['enable', 'disable', 'disable_on_alignment'])
+def test_specialize(mode, device, fresh_triton_cache):
+    counter = 0
+
+    def inc_counter(*args, **kwargs):
+        nonlocal counter
+        counter += 1
+
+    triton.knobs.runtime.jit_cache_hook = inc_counter
+    x = torch.empty(1, dtype=torch.int32, device=device)
+    function = {'enable': kernel, 'disable': kernel_nospec, 'disable_on_alignment': kernel_nospec_on_alignment}[mode]
+    target = {'enable': 3, 'disable': 1, 'disable_on_alignment': 2}[mode]
+    for i in [1, 2, 4, 8, 16, 32]:
+        function[(1, )](x, i, BLOCK=512)
+    assert counter == target
+
+
+def test_annotation(device):
+
+    @triton.jit
+    def kernel(X, i: tl.int32):
+        tl.store(X, i)
+
+    x = torch.empty(1, dtype=torch.int32, device=device)
+
+    device = getattr(torch, device).current_device()
+    kernel[(1, )](x, 1)
+    kernel[(1, )](x, 8)
+    kernel[(1, )](x, 16)
+    kernel[(1, )](x, 17)
+    assert len(kernel.device_caches[device][0]) == 3
+
+
 GLOBAL_DEFAULT_ARG = 1
 
 
-def test_kernel_default_arg():
-    device = "npu"
-
+def test_kernel_default_arg(device):
     global GLOBAL_DEFAULT_ARG
 
     @triton.jit
@@ -242,9 +263,7 @@ def test_kernel_default_arg():
 GLOBAL_VAR = tl.constexpr(1)
 
 
-def test_kernel_global_var_change():
-    device = "npu"
-
+def test_kernel_global_var_change(device):
     global GLOBAL_VAR
 
     @triton.jit
@@ -417,9 +436,7 @@ def test_no_cache_callable():
     assert not kernel.used_global_vals
 
 
-def test_constexpr_cache_invalidation_recreated():
-
-    device = "npu"
+def test_constexpr_cache_invalidation_recreated(device):
 
     def test_run(val):
         VAL = tl.constexpr(val)
@@ -438,9 +455,7 @@ def test_constexpr_cache_invalidation_recreated():
     assert test_run(1234) == 1234
 
 
-def test_jit_warmup_cache() -> None:
-
-    device = "npu"
+def test_jit_warmup_cache(device) -> None:
 
     @triton.jit
     def kernel_add(a, b, o, N: tl.constexpr):
@@ -463,9 +478,7 @@ def test_jit_warmup_cache() -> None:
     assert len(kernel_add.device_caches[device][0]) == 1
 
 
-def test_jit_debug() -> None:
-
-    device = "npu"
+def test_jit_debug(device) -> None:
 
     @triton.jit
     def kernel(tmp):
@@ -488,9 +501,30 @@ def add_fn(a, b, o, N: tl.constexpr):
     tl.store(o + idx, tl.load(a + idx) + tl.load(b + idx))
 
 
-def test_preload(fresh_triton_cache) -> None:
+def test_jit_noinline(device) -> None:
 
-    device = "npu"
+    @triton.jit
+    def kernel_add_device(a, b, o, N: tl.constexpr):
+        add_fn(a, b, o, N)
+
+    device = getattr(torch, device).current_device()
+    assert len(kernel_add_device.device_caches[device][0]) == 0
+    kernel_add_device.warmup(torch.float32, torch.float32, torch.float32, 32, grid=(1, ))
+    assert len(kernel_add_device.device_caches[device][0]) == 1
+    bins = list(kernel_add_device.device_caches[device][0].values())
+    inline_ttir = bins[0].asm['ttir']
+    add_fn.noinline = True
+    add_fn.hash = None
+    kernel_add_device.hash = None
+    kernel_add_device.device_caches[device][0].clear()
+    kernel_add_device.warmup(torch.float32, torch.float32, torch.float32, 32, grid=(1, ))
+    assert len(kernel_add_device.device_caches[device][0]) == 1
+    bins = list(kernel_add_device.device_caches[device][0].values())
+    noinline_ttir = bins[0].asm['ttir']
+    assert inline_ttir != noinline_ttir
+
+
+def test_preload(device, fresh_triton_cache) -> None:
 
     @triton.jit
     def kernel_add(a, b, o, N: tl.constexpr, type: tl.constexpr):
@@ -545,9 +579,7 @@ def test_preload(fresh_triton_cache) -> None:
         kernel_sub.preload(specialization_data)
 
 
-def test_hooks(fresh_triton_cache) -> None:
-
-    device = "npu"
+def test_hooks(device, fresh_triton_cache) -> None:
 
     @triton.jit
     def kernel_add(a, b, o, N: tl.constexpr, type: tl.constexpr):
@@ -587,9 +619,7 @@ def test_hooks(fresh_triton_cache) -> None:
 
 
 @pytest.mark.skipif(reason="within_2g is a HIP specific optimization", condition=not is_hip())
-def test_within_2gb(fresh_triton_cache) -> None:
-    device = "npu"
-
+def test_within_2gb(device, fresh_triton_cache) -> None:
     default_buffer_ops = os.environ.get("AMDGCN_USE_BUFFER_OPS", "0")
     try:
         use_buffer_ops_opts = ["1", "0"]
@@ -626,6 +656,38 @@ def test_within_2gb(fresh_triton_cache) -> None:
         os.environ["AMDGCN_USE_BUFFER_OPS"] = default_buffer_ops
 
 
+def test_function_arguments(device):
+
+    @triton.jit
+    def func1():
+        return 1
+
+    @triton.jit
+    def func2():
+        return 2
+
+    @triton.jit
+    def func3(x):
+        return x
+
+    @triton.jit
+    def func4(x, y):
+        return x + y
+
+    @triton.jit
+    def kernel(Y, fn: tl.constexpr, fn_args):
+        tl.store(Y, fn(*fn_args))
+
+    y = torch.zeros((5, ), dtype=torch.int32, device=device)
+    kernel[(1, )](y[0], func1, tuple())
+    kernel[(1, )](y[1], func2, tuple())
+    kernel[(1, )](y[2], func3, (3, ))
+    kernel[(1, )](y[3], func4, (3, 4))
+    kernel[(1, )](y[4], func1, tuple())
+    assert len(kernel.device_caches[0][0]) == 4
+    assert y.tolist() == [1, 2, 3, 7, 1]
+
+
 class MockThreadPool(Executor):
 
     def __init__(self):
@@ -659,9 +721,7 @@ class MockThreadPool(Executor):
         self.run_all()
 
 
-def test_async_compile_mock(fresh_triton_cache):
-
-    device = "npu"
+def test_async_compile_mock(device, fresh_triton_cache):
 
     @triton.jit
     def kernel(Y, a: tl.constexpr):
@@ -696,9 +756,7 @@ def test_async_compile_mock(fresh_triton_cache):
         pool.run_all()
 
 
-def test_async_compile(fresh_triton_cache):
-
-    device = "npu"
+def test_async_compile(device, fresh_triton_cache):
 
     @triton.jit
     def kernel(Y, a: tl.constexpr):
@@ -729,9 +787,7 @@ def test_async_compile(fresh_triton_cache):
         assert a[0, 0] == 2
 
 
-def test_higher_order_kernel(fresh_triton_cache, capsys):
-
-    device = "npu"
+def test_higher_order_kernel(device, fresh_triton_cache, capsys):
 
     @triton.jit
     def fn_a():
@@ -764,7 +820,6 @@ def test_higher_order_kernel(fresh_triton_cache, capsys):
     kernel[(1, )](output, fn_a)
     assert output.item() == 0
 
-    expecttest.assert_expected_inline(capsys.readouterr().out, """\
-Compiling with fn_a
-Compiling with fn_a after modification
-""")
+    out = capsys.readouterr().out
+    assert "Compiling with fn_a" in out
+    assert "Compiling with fn_a after modification" in out

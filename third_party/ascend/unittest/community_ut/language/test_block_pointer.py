@@ -3,6 +3,7 @@ import torch
 
 import triton
 import triton.language as tl
+from test_core import check_type_supported
 
 
 @triton.jit
@@ -35,13 +36,13 @@ def block_copy_kernel(a_ptr, b_ptr, N, BLOCK_SIZE: tl.constexpr, PADDING_OPTION:
     for padding in (None, "zero", "nan")  #
     for boundary_check in (None, "lower", "upper")
 ])
-def test_block_copy(dtypes_str, n, padding_option, boundary_check):
-    device = "npu"
-
+def test_block_copy(dtypes_str, n, padding_option, boundary_check, device):
     src_dtype_str = dtypes_str[0]
     dst_dtype_str = dtypes_str[1]
     src_dtype = getattr(torch, src_dtype_str)
     dst_dtype = getattr(torch, dst_dtype_str)
+    check_type_supported(src_dtype, device)
+    check_type_supported(dst_dtype, device)
     if src_dtype_str in ("bool", "int16", "int32"):
         if padding_option == "nan":
             pytest.skip("Padding with NaN is not supported for integer types")
@@ -98,9 +99,7 @@ def matmul_no_scf_with_advance_kernel(  #
         [64, 64, 64],
     ] for num_warps in [4, 8]
 ])
-def test_block_ptr_matmul_no_scf(shape, num_warps):
-    device = "npu"
-
+def test_block_ptr_matmul_no_scf(shape, num_warps, device):
     m, n, k = shape
     a = torch.randn((m, k), device=device, dtype=torch.float16)
     b = torch.randn((k, n), device=device, dtype=torch.float16)

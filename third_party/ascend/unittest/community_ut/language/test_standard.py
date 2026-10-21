@@ -9,7 +9,16 @@ from test_core import _test_binary, int_dtypes, uint_dtypes, float_dtypes, numpy
 # test maximum/minimum ops
 # ---------------
 
+
 # TODO: Tests with unsigned integers failed at compilation stage.
+@pytest.mark.interpreter
+@pytest.mark.parametrize("dtype", int_dtypes + uint_dtypes + float_dtypes + ["bfloat16"])
+@pytest.mark.parametrize("op", ["maximum", "minimum"])
+def test_maximum_minium(dtype, op, device):
+    expr = f'tl.{op}(x, y)'
+    numpy_expr = f'np.{op}(x, y)'
+    _test_binary(dtype, dtype, expr, numpy_expr, device=device)
+
 
 # ---------------
 # test sort op
@@ -21,9 +30,7 @@ from test_core import _test_binary, int_dtypes, uint_dtypes, float_dtypes, numpy
 @pytest.mark.parametrize("k", [None, 8])
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("dtype_str", ['int32', 'float16', 'float32', 'bfloat16'])
-def test_sort(M, N, k, descending, dtype_str):
-
-    device = "npu"
+def test_sort(M, N, k, descending, dtype_str, device):
 
     @triton.jit
     def sort_kernel(X, stride_xm, Z, stride_zm, M: tl.constexpr, N: tl.constexpr, k: tl.constexpr,
@@ -61,9 +68,7 @@ def test_sort(M, N, k, descending, dtype_str):
 @pytest.mark.parametrize("M, N, K", [[1, 16, 64], [8, 2, 256], [32, 1, 2], [128, 8, 1]])
 @pytest.mark.parametrize("dtype_str", ['int32', 'float16', 'float32', 'bfloat16'])
 @pytest.mark.parametrize("dim", [0, 1, 2, -2])
-def test_flip(M, N, K, dtype_str, dim):
-
-    device = "npu"
+def test_flip(M, N, K, dtype_str, dim, device):
 
     @triton.jit
     def flip_kernel(X, Z, M: tl.constexpr, N: tl.constexpr, K: tl.constexpr, dim: tl.constexpr):
@@ -84,10 +89,8 @@ def test_flip(M, N, K, dtype_str, dim):
 
 
 @pytest.mark.interpreter
-def test_flip_inf():
+def test_flip_inf(device):
     # Reproducer for https://github.com/triton-lang/triton/issues/5439
-
-    device = "npu"
 
     @triton.jit
     def triton_flip_kernel(out_ptr, x_ptr, N: tl.constexpr):
@@ -109,9 +112,7 @@ def test_flip_inf():
 
 
 @pytest.mark.interpreter
-def test_ravel():
-
-    device = "npu"
+def test_ravel(device):
 
     @triton.jit
     def triton_ravel(out_ptr):
@@ -128,9 +129,7 @@ def test_ravel():
 
 @pytest.mark.interpreter
 @pytest.mark.parametrize("size_i, size_j, size_g", [[5, 7, 3]])
-def test_swizzle2d(size_i, size_j, size_g):
-
-    device = "npu"
+def test_swizzle2d(size_i, size_j, size_g, device):
 
     @triton.jit
     def swizzle2d_kernel(output, size_i, size_j, size_g):

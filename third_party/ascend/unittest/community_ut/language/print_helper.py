@@ -104,9 +104,7 @@ def kernel_print_2d_tensor(X, Y, BLOCK_SIZE_X: tl.constexpr, BLOCK_SIZE_Y: tl.co
     tl.device_print("", x)
 
 
-def test_print(func: str, data_type: str):
-    device = "npu"
-
+def test_print(func: str, data_type: str, device: str):
     N = 128  # This value should match with test_print in test_subprocess.py.
     # TODO(antiagainst): Currently the warp count is chosen to make sure we don't have multiple
     # threads printing duplicated messages due to broadcasting. Improve print op lowering logic

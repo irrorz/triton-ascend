@@ -488,12 +488,22 @@ class TensorPtr(NamedTuple):
     test: tl.constexpr
 
 
+class TestTuple(NamedTuple):
+    __test__ = False
+    test: TensorPtr
+
+
 @triton.jit
 def foo(test: TestTuple):
     x: tl.constexpr = tl.constexpr(1)
     for i in tl.range(x):
         # Tests that it compiles and is usable.
         tl.static_assert(test.test.test == 1)
+
+
+def test_tuple_constexpr():
+    test = TestTuple(test=TensorPtr(tl.constexpr(1)))
+    run_parser(foo, args=(test, ))
 
 
 @tl.core._aggregate

@@ -28,11 +28,10 @@ def add_kernel(
     tl.store(out_ptr + offsets, output, mask=mask)
 
 
-def test_module_walk():
+def test_module_walk(device):
     """
     Test the MLIR bindings exposed for the out-of-tree walk.
     """
-    device = "npu"
 
     def walk_fn(op):
         name = op.get_name()
@@ -82,9 +81,7 @@ def test_module_walk():
     ttir_module.walk(walk_fn)
 
 
-def test_python_func_in_visit_call():
-
-    device = "npu"
+def test_python_func_in_visit_call(device):
 
     @triton.jit
     def test_py_call_const_kernel(

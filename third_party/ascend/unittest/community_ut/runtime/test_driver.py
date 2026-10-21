@@ -17,10 +17,8 @@ def test_is_lazy():
     utils = triton.runtime.driver.active.utils  # noqa: F841
 
 
-def test_kernel_in_thread():
+def test_kernel_in_thread(device):
     # Test calling in a new thread sets a valid device context
-    device = "npu"
-
     buf = torch.zeros((38016 * 1024, ), dtype=torch.float32, device=device)
 
     @triton.jit

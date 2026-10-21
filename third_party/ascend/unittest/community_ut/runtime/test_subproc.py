@@ -1,15 +1,8 @@
 import multiprocessing
 import shutil
-import sys as _sys
-from pathlib import Path as _Path
 
 import triton
 import triton.language as tl
-
-_sys.path.insert(0, str(_Path(__file__).resolve().parent))
-from npu_compat import install_pytest_fixtures
-
-install_pytest_fixtures(globals())
 from triton.compiler import ASTSource
 
 target = triton.runtime.driver.active.get_current_target()
