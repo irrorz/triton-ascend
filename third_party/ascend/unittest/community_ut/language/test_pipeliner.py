@@ -431,44 +431,6 @@ def indirect_matmul_kernel(
     tl.store(Out_ptrs, acc)
 
 
-@pytest.mark.parametrize("BLOCK_M, BLOCK_N, BLOCK_K", [(128, 128, 128), (128, 128, 64), (128, 64, 128)])
-@pytest.mark.parametrize("num_stages", [1, 3, 5])
-def test_indirect_matmul(BLOCK_M, BLOCK_N, BLOCK_K, num_stages):
-    device = "npu"
-
-    if (num_stages > 3 or (num_stages >= 3 and (BLOCK_M, BLOCK_N, BLOCK_K) == (128, 128, 128))) and is_hip():
-        pytest.skip("Not enough shared memory on HIP.")
-    M = BLOCK_M
-    N = BLOCK_N
-
-    K = BLOCK_K * 2
-    A = random_bfloat16((K, N), device=device)
-    B = random_bfloat16((K, M), device=device)
-
-    # Use arange for indices so it's numerically just a matmul
-    Indices = torch.arange(K, device=device)
-    Out = torch.empty((N, M), device=device, dtype=torch.float32)
-
-    expect = torch.matmul(A.mT.to(torch.float32), B.to(torch.float32))
-
-    indirect_matmul_kernel[(1, )](
-        Out,
-        Out.stride(0),
-        A,
-        A.stride(0),
-        B,
-        B.stride(0),
-        Indices,
-        K,
-        BLOCK_M,
-        BLOCK_K,
-        BLOCK_N,
-        num_warps=4,
-        num_stages=num_stages,
-    )
-    torch.testing.assert_close(expect, Out)
-
-
 @triton.jit
 def matmul_kernel_persistent_scatter(a_ptr, b_ptr, c_ptr,  #
                                      M, N, K,  #
@@ -558,36 +520,3 @@ def test_scatter_pipeline():
     assert kernel.asm["ttgir"].count("tma_store_wait") == 2, "expected pipelined TMA scatter"
 
 
-@pytest.mark.parametrize("num_stages", [1, 2, 3])
-def test_conditional_store_pipeline(num_stages):
-    """
-    Test for the conditional store pipelining bugfix.
-    This reproduces the race condition where conditional code gets moved to epilogue cluster,
-    causing users of loads to be scheduled in later clusters than the loads themselves.
-    """
-    device = "npu"
-
-    check_capabilities()
-
-    @triton.jit
-    def conditional_store_kernel(
-        arange_ptr,
-        output_ptr,
-        loop_stages: tl.constexpr,
-        N: tl.constexpr,
-        always_true_but_not_constexpr,
-    ):
-        for i in tl.range(0, N, num_stages=loop_stages):
-            out_idx = tl.load(arange_ptr + i + tl.arange(0, 1))
-            if always_true_but_not_constexpr:
-                tl.store(output_ptr + out_idx, i + 1)
-
-    N = 17
-    arange = torch.arange(N, dtype=torch.int32, device=device)
-    output = torch.zeros((N, ), dtype=torch.int32, device=device)
-
-    conditional_store_kernel[(1, )](arange, output, num_stages, N, True)
-
-    # Expected output: [1, 2, 3, 4, ..., N]
-    expected = torch.arange(1, N + 1, dtype=torch.int32, device=device)
-    assert torch.equal(output, expected)

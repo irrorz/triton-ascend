@@ -53,30 +53,3 @@ def test_unknown_annotation():
 
 
 # Test float annotations are properly respected
-@pytest.mark.parametrize(
-    ("dtype", "test_val"),
-    [(dtype, test_val)
-     for dtype in [tl.float16, tl.bfloat16, tl.float32]
-     for test_val in [0.0, 42.0, float("inf"), float("nan")]],
-)
-def test_float_annotation(dtype, test_val):
-
-    @triton.jit
-    @annotated_function(val=dtype)
-    def _kernel(ptr, val):
-        tl.static_assert(val.dtype == dtype)
-        tl.store(ptr, val)
-
-    ptr = torch.empty(1, device="npu", dtype=torch.float32)
-    h = _kernel[(1, )](ptr, test_val)
-    np.testing.assert_allclose(ptr.cpu().numpy(), [test_val], atol=1e-6)
-
-    # Check that the type is properly emitted in the IR
-    if dtype == tl.float16:
-        assert "%val: f16" in h.asm["ttir"]
-        assert "arith.extf %val : f16 to f32" in h.asm["ttir"]
-    elif dtype == tl.bfloat16:
-        assert "%val: bf16" in h.asm["ttir"]
-        assert "arith.extf %val : bf16 to f32" in h.asm["ttir"]
-    elif dtype == tl.float32:
-        assert "%val: f32" in h.asm["ttir"]

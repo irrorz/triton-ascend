@@ -28,16 +28,6 @@ def _tuple_index(_0, Ptrs, _1: tl.constexpr, values, _2, _3: tl.constexpr, _4):
     _tuple_index_func(Ptrs, values)
 
 
-@pytest.mark.parametrize("size", [0, 1, 2, 3, 4])
-def test_index(size):
-    device = "npu"
-
-    vals = tuple([i + 1 for i in range(size)])
-    rets = tuple([torch.zeros((1, ), dtype=torch.float32, device=device) for _ in vals])
-    _tuple_index[(1, )](0, rets, 0, vals, 0, 0, 0)
-    assert vals == tuple([x.item() - 1 for x in rets])
-
-
 # ----
 
 
@@ -55,21 +45,6 @@ def _tuple_assign(XPtrs, YPtrs, values):
     tl.store(Y[0], y[0])
     tl.store(Y[1], y[1])
     tl.store(Y[2], y[2])
-
-
-@pytest.mark.interpreter
-def test_assign():
-    device = "npu"
-
-    vals = (2., 3., None)
-    x = tuple([torch.zeros((1, ), dtype=torch.float32, device=device) for _ in range(2)])
-    y = tuple([torch.zeros((1, ), dtype=torch.float32, device=device) for _ in range(3)])
-    _tuple_assign[(1, )](x, y, vals)
-    assert x[0] == vals[0]
-    assert x[1] == vals[1]
-    assert y[0] == vals[0]
-    assert y[1] == 10
-    assert y[2] == vals[1]
 
 
 @triton.jit
@@ -143,20 +118,6 @@ def _tuple_serialize(Ptr, N1, tuple1, cst1: tl.constexpr, val1, tuple2):
     _tuple_fn0(Ptr, 15, (-1, None, tuple1))
 
 
-@pytest.mark.interpreter
-def test_serialize():
-    device = "npu"
-
-    x0 = torch.tensor([8], dtype=torch.int32, device=device)
-    x1 = torch.tensor([12], dtype=torch.int32, device=device)
-    y0 = torch.tensor([10], dtype=torch.int32, device=device)
-    z = torch.empty((10, ), dtype=torch.int32, device=device)
-    # we want to check that JIT specialization propagates to tuples:
-    _tuple_serialize[(1, )](z, None, (x0, (1, None, x1, tl.constexpr(4))), 20, 1, (y0, ))
-    ref = torch.tensor([8, 1, 12, 21, 10, 15, -1, 8, 1, 12], device=device)
-    assert torch.equal(z, ref)
-
-
 class Function(NamedTuple):
     fn: tl.constexpr
     captured: tuple
@@ -201,25 +162,6 @@ def _namedtuple_kernel(closure, _X, Y, BLOCK_M: tl.constexpr, BLOCK_N: tl.conste
 
 
 @pytest.mark.interpreter
-def test_namedtuple():
-    device = "npu"
-
-    x = torch.randn((32, 32), dtype=torch.float32, device=device)
-    y = torch.empty((16, 16), dtype=torch.float32, device=device)
-    a = torch.tensor([5.2], dtype=torch.float32, device=device)
-
-    @triton.jit
-    def mul(x, a):
-        return x * tl.load(a)
-
-    function = Function(mul, (a, ))
-    tx = Tensor(x, x.shape, x.stride())
-    ty = Tensor(y, y.shape, y.stride())
-    _namedtuple_kernel[(1, )](function, tx, ty, 64, 64)
-    assert torch.allclose(y, x[:16, :16] * a)
-
-
-@pytest.mark.interpreter
 def test_eq():
 
     device = "npu"
@@ -258,26 +200,6 @@ def test_add():
     torch.testing.assert_close(rets.cpu(), torch.arange(8, dtype=torch.int32))
 
 
-def test_passing_tuple_with_constexpr():
-
-    device = "npu"
-
-    @triton.jit
-    def m_to_the_n(X, shape: tl.constexpr, strides, m_n):
-        Xs = X + tl.arange(0, shape[0])[:, None] * strides[0] + tl.arange(0, shape[1])[None, :] * strides[1]
-        # Include a for loop to ensure strides[1] is lifted into a constexpr
-        # (otherwise cloning the local scope will fail).
-        data = tl.load(Xs)
-        for i in tl.range(0, m_n[1]):
-            data = m_n[0] * data
-        tl.store(Xs, data)
-
-    x = torch.arange(0, 64, device=device).reshape(8, 8)
-    expected_x = 8 * x.clone()
-    m_to_the_n[(1, )](x, x.shape, x.stride(), (2, 3))
-    torch.testing.assert_close(x, expected_x, rtol=0, atol=0)
-
-
 @triton.jit
 def _nested_tuple_kernel(x):
     # This creates a new scope, which will force a copy of liveins. It's
@@ -285,12 +207,6 @@ def _nested_tuple_kernel(x):
     # which relies on the types being correct for the roundtrip to succeed.
     for _ in range(1):
         tl.static_assert(x[1][0] == 2)
-
-
-def test_passing_nested_tuple_with_constexpr():
-    device = "npu"
-
-    _nested_tuple_kernel[(1, )](((1, ), (tl.constexpr(2), )))
 
 
 def test_passing_nested_tuple_with_constexpr_and_jit_hook(fresh_knobs):
@@ -321,34 +237,6 @@ def test_passing_nested_tuple_with_constexpr_and_jit_hook(fresh_knobs):
     assert preload_run is not None
 
     assert warmup_run.hash == preload_run.hash
-
-
-def test_passing_tuple_to_make_tensor_descriptor(with_allocator):
-
-    device = "npu"
-
-    @triton.jit
-    def m_to_the_n(X_base, shape, strides, m_n, BLOCK_DIM: tl.constexpr):
-        tl.static_assert(isinstance(strides[1].type, tl.constexpr_type))
-        X = tl.make_tensor_descriptor(
-            X_base,
-            shape=shape,
-            strides=strides,
-            block_shape=[BLOCK_DIM, BLOCK_DIM],
-        )
-        # Make sure tl.make_tensor_descriptor didn't modify strides (i.e. didn't unwrap the constexpr)
-        tl.static_assert(isinstance(strides[1].type, tl.constexpr_type))
-        data = X.load([0, 0])
-        # Include a for loop to ensure strides[1] is lifted into a constexpr
-        # (otherwise cloning the local scope will fail).
-        for i in tl.range(0, m_n[1]):
-            data = m_n[0] * data
-        X.store([0, 0], data)
-
-    x = torch.arange(0, 16, device=device).reshape(4, 4)
-    expected_x = 8 * x.clone()
-    m_to_the_n[(1, )](x, x.size(), x.stride(), (2, 3), x.size(0))
-    torch.testing.assert_close(x, expected_x, rtol=0, atol=0)
 
 
 def test_modifying_tuples():

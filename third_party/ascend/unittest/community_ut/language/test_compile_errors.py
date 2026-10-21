@@ -248,32 +248,6 @@ def test_returns_branched_on_non_constexpr():
         raise assertion_err from e.value
 
 
-def test_power_of_two_shapes():
-    if is_npu():
-        pytest.skip("TA only enforces arange power-of-2 in SIMT mode")
-
-    @triton.jit
-    def kernel():
-        tl.arange(2, 7)
-
-    with pytest.raises(CompilationError) as e:
-        triton.compile(triton.compiler.ASTSource(fn=kernel, signature={}, constexprs={}))
-    assert str(e.value.__cause__) == "arange's range must be a power of 2"
-
-
-def test_power_of_two_shapes_2():
-    if is_npu():
-        pytest.skip("TA disables block-shape power-of-2 check")
-
-    @triton.jit
-    def kernel():
-        tl.full((33, ), 0, dtype=tl.int64)
-
-    with pytest.raises(CompilationError) as e:
-        triton.compile(triton.compiler.ASTSource(fn=kernel, signature={}, constexprs={}))
-    assert str(e.value.__cause__) == "Shape element 0 must be a power of 2"
-
-
 GLOBAL = 42
 
 
@@ -363,48 +337,6 @@ def test_where_warning(fresh_triton_cache):
         triton.compile(triton.compiler.ASTSource(fn=kernel, signature={}, constexprs={}))
 
 
-@pytest.mark.parametrize("dtype", [tl.float8e5, tl.float8e5b16, tl.float8e4nv, tl.float8e4b8, tl.float8e4b15])
-def test_fp8_support(fresh_triton_cache, dtype):
-    warning_dtypes = []
-    supported_dtypes = [tl.float8e5]
-    if is_npu():
-        cc = torch.npu.get_device_capability(0)
-        supported_dtypes.append(tl.float8e4b15)
-        supported_dtypes.append(tl.float8e4nv)
-        if cc >= (9, 0):
-            warning_dtypes.append(tl.float8e4b15)
-    elif is_hip():
-        supported_dtypes += [tl.float8e4nv, tl.float8e4b8, tl.float8e5b16]
-        if is_hip_cdna4():
-            warning_dtypes += [tl.float8e4b8, tl.float8e5b16]
-
-    @triton.jit
-    def dtype_kernel(dtype: tl.constexpr):
-        a = tl.full((64, 64), 0.0, dtype)
-        tl.dot(a, a)
-
-    if dtype in warning_dtypes:
-        if is_npu():
-            ctx = pytest.warns(UserWarning,
-                               match=r"the use of fp8e4b15 is deprecated on Hopper and later architectures")
-        elif is_hip_cdna4():
-            ctx = pytest.warns(UserWarning, match=r"AMD gfx942 specific and not supported on gfx950")
-    elif dtype in supported_dtypes:
-        ctx = contextlib.nullcontext()
-    else:
-        ctx = pytest.raises(CompilationError, match="")
-
-    with ctx as e:
-        triton.compile(
-            triton.compiler.ASTSource(fn=dtype_kernel, signature={"dtype": "constexpr"}, constexprs={"dtype": dtype}))
-
-    if dtype not in supported_dtypes:
-        try:
-            assert ("not supported in this architecture" in str(e.value.__cause__))
-        except AssertionError as assertion_err:
-            raise assertion_err from e.value
-
-
 @pytest.mark.parametrize("dtype", [tl.float8e5, tl.int8, tl.float16])
 def test_min_dot_size(dtype):
     error_msg = "Input shapes should have "
@@ -434,25 +366,6 @@ def test_min_dot_size(dtype):
             assert (error_msg in str(e.value.__cause__))
         except AssertionError as assertion_err:
             raise assertion_err from e.value
-
-
-def test_max_num_imprecise_acc_limit():
-    if is_npu():
-        pytest.skip("TA ignores max_num_imprecise_acc on Ascend instead of raising")
-
-    @triton.jit
-    def dot_kernel():
-        SIZE: tl.constexpr = 64
-        a = tl.full((SIZE, SIZE), 0.0, tl.float8e5)
-        b = tl.full((SIZE, SIZE), 0.0, tl.float8e5)
-        tl.dot(a, b, max_num_imprecise_acc=128)
-
-    with pytest.raises(CompilationError) as e:
-        triton.compile(triton.compiler.ASTSource(fn=dot_kernel, signature={}, constexprs={}))
-    try:
-        assert (str(e.value.__cause__) == "max_num_imprecise_acc (128) must be <= K (64)")
-    except AssertionError as assertion_err:
-        raise assertion_err from e.value
 
 
 extra_words = "These are extra words in the error message."

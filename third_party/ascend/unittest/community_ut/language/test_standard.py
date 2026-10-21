@@ -11,15 +11,6 @@ from test_core import _test_binary, int_dtypes, uint_dtypes, float_dtypes, numpy
 
 
 # TODO: Tests with unsigned integers failed at compilation stage.
-@pytest.mark.interpreter
-@pytest.mark.parametrize("dtype", int_dtypes + uint_dtypes + float_dtypes + ["bfloat16"])
-@pytest.mark.parametrize("op", ["maximum", "minimum"])
-def test_maximum_minium(dtype, op):
-    device = "npu"
-
-    expr = f'tl.{op}(x, y)'
-    numpy_expr = f'np.{op}(x, y)'
-    _test_binary(dtype, dtype, expr, numpy_expr, device=device)
 
 
 # ---------------

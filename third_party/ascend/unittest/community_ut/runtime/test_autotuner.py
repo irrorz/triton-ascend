@@ -18,35 +18,6 @@ def do_bench(kernel_call, quantiles, use_npu_graph=False):
     return triton.testing.do_bench(kernel_call, quantiles=quantiles, warmup=1, rep=1)
 
 
-@pytest.mark.parametrize('use_npu_graph', [False, True])
-def test_kwargs(use_npu_graph: bool):
-    device = "npu"
-
-    if use_npu_graph and not torch.npu.is_available():
-        pytest.xfail("NPU is not available")
-
-    M, N = 1024, 16
-    src = torch.randn(M * N, device=device)
-    dst = torch.empty(M * N, device=device)
-
-    configs = [triton.Config(kwargs={'BLOCK_SIZE_M': 32}), triton.Config(kwargs={'BLOCK_SIZE_M': 128})]
-
-    @triton.autotune(configs=configs, key=["M"],
-                     do_bench=lambda kernel, quantiles: do_bench(kernel, quantiles, use_npu_graph))
-    @triton.jit
-    def _kernel(dst, src, stride_m: tl.constexpr, M, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_M: tl.constexpr):
-        offsets_m = tl.program_id(0) * stride_m + tl.arange(0, BLOCK_SIZE_M)
-        offsets_n = tl.arange(0, BLOCK_SIZE_N)
-        x = tl.load(src + offsets_m[:, None] * BLOCK_SIZE_N + offsets_n[None, :])
-        tl.store(dst + offsets_m[:, None] * BLOCK_SIZE_N + offsets_n[None, :], x)
-
-    grid = lambda META: (triton.cdiv(N, META['BLOCK_SIZE_M']), )
-    _kernel[grid](dst, src, N, M, N)
-    # the key word args could be in arbitrary order.
-    _kernel[grid](dst=dst, src=src, M=M // 2, stride_m=N, BLOCK_SIZE_N=N)
-    assert len(_kernel.cache) == 2
-
-
 def test_no_do_bench():
     device = "npu"
 

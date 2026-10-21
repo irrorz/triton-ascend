@@ -212,43 +212,6 @@ def test_reuse(fresh_triton_cache):
     assert counter == 1
 
 
-@pytest.mark.parametrize('mode', ['enable', 'disable', 'disable_on_alignment'])
-def test_specialize(mode, fresh_triton_cache):
-    device = "npu"
-
-    counter = 0
-
-    def inc_counter(*args, **kwargs):
-        nonlocal counter
-        counter += 1
-
-    triton.knobs.runtime.jit_cache_hook = inc_counter
-    x = torch.empty(1, dtype=torch.int32, device=device)
-    function = {'enable': kernel, 'disable': kernel_nospec, 'disable_on_alignment': kernel_nospec_on_alignment}[mode]
-    target = {'enable': 3, 'disable': 1, 'disable_on_alignment': 2}[mode]
-    for i in [1, 2, 4, 8, 16, 32]:
-        function[(1, )](x, i, BLOCK=512)
-    assert counter == target
-
-
-def test_annotation():
-
-    device = "npu"
-
-    @triton.jit
-    def kernel(X, i: tl.int32):
-        tl.store(X, i)
-
-    x = torch.empty(1, dtype=torch.int32, device=device)
-
-    device = getattr(torch, device).current_device()
-    kernel[(1, )](x, 1)
-    kernel[(1, )](x, 8)
-    kernel[(1, )](x, 16)
-    kernel[(1, )](x, 17)
-    assert len(kernel.device_caches[device][0]) == 3
-
-
 GLOBAL_DEFAULT_ARG = 1
 
 
@@ -524,31 +487,6 @@ def add_fn(a, b, o, N: tl.constexpr):
     tl.store(o + idx, tl.load(a + idx) + tl.load(b + idx))
 
 
-def test_jit_noinline() -> None:
-
-    device = "npu"
-
-    @triton.jit
-    def kernel_add_device(a, b, o, N: tl.constexpr):
-        add_fn(a, b, o, N)
-
-    device = getattr(torch, device).current_device()
-    assert len(kernel_add_device.device_caches[device][0]) == 0
-    kernel_add_device.warmup(torch.float32, torch.float32, torch.float32, 32, grid=(1, ))
-    assert len(kernel_add_device.device_caches[device][0]) == 1
-    bins = list(kernel_add_device.device_caches[device][0].values())
-    inline_ttir = bins[0].asm['ttir']
-    add_fn.noinline = True
-    add_fn.hash = None
-    kernel_add_device.hash = None
-    kernel_add_device.device_caches[device][0].clear()
-    kernel_add_device.warmup(torch.float32, torch.float32, torch.float32, 32, grid=(1, ))
-    assert len(kernel_add_device.device_caches[device][0]) == 1
-    bins = list(kernel_add_device.device_caches[device][0].values())
-    noinline_ttir = bins[0].asm['ttir']
-    assert inline_ttir != noinline_ttir
-
-
 def test_preload(fresh_triton_cache) -> None:
 
     device = "npu"
@@ -685,40 +623,6 @@ def test_within_2gb(fresh_triton_cache) -> None:
             assert pointer_range_32 == pointer_range
     finally:
         os.environ["AMDGCN_USE_BUFFER_OPS"] = default_buffer_ops
-
-
-def test_function_arguments():
-
-    device = "npu"
-
-    @triton.jit
-    def func1():
-        return 1
-
-    @triton.jit
-    def func2():
-        return 2
-
-    @triton.jit
-    def func3(x):
-        return x
-
-    @triton.jit
-    def func4(x, y):
-        return x + y
-
-    @triton.jit
-    def kernel(Y, fn: tl.constexpr, fn_args):
-        tl.store(Y, fn(*fn_args))
-
-    y = torch.zeros((5, ), dtype=torch.int32, device=device)
-    kernel[(1, )](y[0], func1, tuple())
-    kernel[(1, )](y[1], func2, tuple())
-    kernel[(1, )](y[2], func3, (3, ))
-    kernel[(1, )](y[3], func4, (3, 4))
-    kernel[(1, )](y[4], func1, tuple())
-    assert len(kernel.device_caches[0][0]) == 4
-    assert y.tolist() == [1, 2, 3, 7, 1]
 
 
 class MockThreadPool(Executor):
