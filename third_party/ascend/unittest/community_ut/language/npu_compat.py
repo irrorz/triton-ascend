@@ -98,4 +98,3 @@ def install_pytest_fixtures(ns):
     ns["fresh_knobs"] = pytest.fixture(_fresh_knobs)
     ns["fresh_knobs_except_libraries"] = pytest.fixture(_fresh_knobs_except_libraries)
     ns["with_allocator"] = pytest.fixture(_with_allocator)
-    ns.setdefault("pytest_plugins", ["npu_compat"])
